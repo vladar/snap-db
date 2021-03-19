@@ -32,6 +32,8 @@ export class SnapDatabase {
 
     private _isCompacting: boolean = false;
 
+    private _isFlushing: boolean = false;
+
     private _isConnecting: boolean = false;
 
     public txNum: number = Math.round(Math.random() * 256);
@@ -214,7 +216,7 @@ export class SnapDatabase {
         const keyStr = (this.keyType === "any" ? (typeof key === "number" ? "n>" : "s>") : "") + String(key);
 
         const keyLen = keyStr.length;
-        
+
 
         fs.writeSync(this._logHandle, NULLBYTE);
         this._memTableSize++;
@@ -314,7 +316,7 @@ export class SnapDatabase {
             let dataLength = index.keys[strKey][1];
 
             // tombstone found
-            if (dataStart === -1) { 
+            if (dataStart === -1) {
                 return {type: "data", data: undefined};
             }
 
@@ -379,7 +381,7 @@ export class SnapDatabase {
     }
 
     public maybeFlushLog(forceFlush?: boolean) {
-        if (this._doingTx || this._isCompacting) {
+        if (this._doingTx || this._isCompacting || this._isFlushing) {
             return;
         }
 
@@ -396,6 +398,7 @@ export class SnapDatabase {
 
             const level0Files = this._manifestData.lvl && this._manifestData.lvl.length ? this._manifestData.lvl[0].files.map(f => f.i) : [];
 
+            this._isFlushing = true;
             tableGenerator(0, this._manifestData, this._path, this._memTable, () => {
 
                 // remove old level 0 files from manifest
@@ -430,6 +433,7 @@ export class SnapDatabase {
                     }
                 });
 
+                this._isFlushing = false;
                 this._maybeCompact();
             });
         }
