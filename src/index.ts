@@ -244,7 +244,7 @@ export class SnapDB<K> {
             }
 
             const checkDone = () => {
-                
+
                 if (this.isCompacting) {
                     setTimeout(checkDone, 100);
                 } else {
@@ -297,6 +297,114 @@ export class SnapDB<K> {
             }
             this.on("ready", readyCB);
         });
+    }
+
+    public getSync(key: K): string | undefined {
+        if (this[`_worker`]) {
+            throw new Error("getSync requires `mainThread: true`")
+        }
+        const getKey = this.keyType === `any` ? this[`_anyKey`](key) : key
+        try {
+            const data = this[`_database`].get(getKey)
+            const result = data === null ? undefined : data
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`get`, {
+                    target: this,
+                    tx: rand(),
+                    time: Date.now(),
+                    data: data,
+                })
+            return result
+        } catch (e) {
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`get`, {
+                    target: this,
+                    tx: rand(),
+                    time: Date.now(),
+                    error: e,
+                })
+            throw e
+        }
+    }
+
+    public putSync(key: K, data: string): void {
+        if (this[`_worker`]) {
+            throw new Error("putSync requires `mainThread: true`")
+        }
+        if (key === null || key === undefined) {
+            throw new Error(`Write Error: Key can't be null or undefined!`)
+        }
+
+        if (data === null || data === undefined || typeof data !== `string`) {
+            throw new Error(`Write Error: Data must be a string!`)
+        }
+
+        const parseKey = {
+            string: (k): string => String(k),
+            float: (k): number => (isNaN(k) || k === null ? 0 : parseFloat(k)),
+            int: (k): number => (isNaN(k) || k === null ? 0 : parseInt(k)),
+        }
+
+        const msgId = rand()
+        try {
+            const put = this[`_database`].put(
+              this.keyType === `any`
+                ? this[`_anyKey`](key)
+                : parseKey[this.keyType](key),
+              data
+            )
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`put`, {
+                    target: this,
+                    tx: msgId,
+                    time: Date.now(),
+                    data: put,
+                })
+            return put
+        } catch (e) {
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`put`, {
+                    target: this,
+                    tx: msgId,
+                    time: Date.now(),
+                    error: e,
+                })
+            throw e
+        }
+    }
+
+    /**
+     * Delete a key and it's value from the data store.
+     *
+     * @param {K} key
+     * @returns {Promise<any>}
+     * @memberof SnapDB
+     */
+    public deleteSync(key: K): void {
+        if (key === null || key === undefined) {
+            throw new Error(`Write Error: Key can't be null or undefined!`)
+        }
+        const getKey = this.keyType === `any` ? this[`_anyKey`](key) : key
+        const msgId = rand()
+        try {
+            this[`_database`].delete(getKey)
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`delete`, {
+                    target: this,
+                    tx: msgId,
+                    time: Date.now(),
+                    data: true,
+                })
+        } catch (e) {
+            if (this[`_hasEvents`])
+                this[`_rse`].trigger(`delete`, {
+                    target: this,
+                    tx: msgId,
+                    time: Date.now(),
+                    error: e,
+                })
+            throw e
+        }
     }
 
     /**
@@ -580,7 +688,7 @@ export class SnapDB<K> {
 
     /**
      * Get all keys from the data store in order, or optionally in reverse order.
-     * 
+     *
      * @param {boolean} [reverse]
      * @returns {Promise<AsyncIterableIterator<K>>}
      * @memberof SnapDB
@@ -590,7 +698,7 @@ export class SnapDB<K> {
     }
 
     /**
-     * 
+     *
      *
      * @param {boolean} [reverse]
      * @returns {stream.Readable}
@@ -709,7 +817,7 @@ export class SnapDB<K> {
 
     /**
      * Get a collection of values from the keys at the given offset/limit. Optionally get the results from the end of the key set.
-     * 
+     *
      * @param {number} offset
      * @param {number} limit
      * @param {(key: K, data: string) => void} onRecord
